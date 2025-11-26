@@ -2,6 +2,13 @@ package org.egovframe.cloud.apigateway.config;
 
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jwts;
+
+import java.security.KeyFactory;
+import java.security.NoSuchAlgorithmException;
+import java.security.PublicKey;
+import java.security.spec.InvalidKeySpecException;
+import java.security.spec.X509EncodedKeySpec;
+import java.util.Base64;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -48,7 +55,6 @@ public class ReactiveAuthorization implements ReactiveAuthorizationManager<Autho
 
     @Value("${token.secret}")
     private String TOKEN_SECRET;
-
     @Value("${token.public}")
     private String TOKEN_PUBLIC;
 
@@ -66,33 +72,32 @@ public class ReactiveAuthorization implements ReactiveAuthorizationManager<Autho
      */
     @Override
     public Mono<AuthorizationDecision> check(Mono<Authentication> authentication,
-        AuthorizationContext context) {
+                                             AuthorizationContext context) {
         ServerHttpRequest request = context.getExchange().getRequest();
         RequestPath requestPath = request.getPath();
         HttpMethod httpMethod = request.getMethod();
 
         String baseUrl =
-            APIGATEWAY_HOST + AUTHORIZATION_URI + "?httpMethod=" + httpMethod + "&requestPath="
-                + requestPath;
+                APIGATEWAY_HOST + AUTHORIZATION_URI + "?httpMethod=" + httpMethod + "&requestPath="
+                        + requestPath;
         log.info("baseUrl={}", baseUrl);
 
         String authorizationHeader = "";
 
         List<String> authorizations =
-            request.getHeaders().containsKey(HttpHeaders.AUTHORIZATION) ?
-                request.getHeaders().get(HttpHeaders.AUTHORIZATION) : null;
+                request.getHeaders().containsKey(HttpHeaders.AUTHORIZATION) ?
+                        request.getHeaders().get(HttpHeaders.AUTHORIZATION) : null;
 
         if (authorizations != null && authorizations.size() > 0
-            && StringUtils.hasLength(authorizations.get(0))
-            && !"undefined".equals(authorizations.get(0))
+                && StringUtils.hasLength(authorizations.get(0))
+                && !"undefined".equals(authorizations.get(0))
         ) {
             try {
                 authorizationHeader = authorizations.get(0);
-                String jwt = authorizationHeader.replace("Bearer", "");
-                String subject = Jwts.parser().setSigningKey(TOKEN_PUBLIC)
-                    .parseClaimsJws(jwt)
-                    .getBody()
-                    .getSubject();
+                String jwt = authorizationHeader.replace("Bearer ", "");
+                String subject = Jwts.parser()
+                        .verifyWith(loadPublicKey(TOKEN_PUBLIC))
+                        .build().parseSignedClaims(jwt).getPayload().getSubject();
 
                 // refresh token 요청 시 토큰 검증만 하고 인가 처리 한다.
                 if (REFRESH_TOKEN_URI.equals(requestPath + "")) {
@@ -118,11 +123,11 @@ public class ReactiveAuthorization implements ReactiveAuthorizationManager<Autho
         try {
             String token = authorizationHeader; // Variable used in lambda expression should be final or effectively final
             Mono<Boolean> body = WebClient.create(baseUrl)
-                .get()
-                .headers(httpHeaders -> {
-                    httpHeaders.add(HttpHeaders.AUTHORIZATION, token);
-                })
-                .retrieve().bodyToMono(Boolean.class);
+                    .get()
+                    .headers(httpHeaders -> {
+                        httpHeaders.add(HttpHeaders.AUTHORIZATION, token);
+                    })
+                    .retrieve().bodyToMono(Boolean.class);
             granted = body.toFuture().get().booleanValue();
             log.info("Security AuthorizationDecision granted={}", granted);
         } catch (Exception e) {
@@ -131,6 +136,16 @@ public class ReactiveAuthorization implements ReactiveAuthorizationManager<Autho
         }
 
         return Mono.just(new AuthorizationDecision(granted));
+    }
+
+    private PublicKey loadPublicKey(String tokenPublic) {
+        try {
+            byte[] keyBytes = Base64.getDecoder().decode(tokenPublic);
+            X509EncodedKeySpec keySpec = new X509EncodedKeySpec(keyBytes);
+            return KeyFactory.getInstance("RSA").generatePublic(keySpec);
+        } catch (NoSuchAlgorithmException | InvalidKeySpecException e) {
+            throw new IllegalStateException("Invalid public key", e);
+        }
     }
 
 }

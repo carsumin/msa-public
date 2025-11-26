@@ -33,15 +33,16 @@ public class WebFluxSecurityConfig {
 
     private final static String[] PERMITALL_ANTPATTERNS = {
             ReactiveAuthorization.AUTHORIZATION_URI, "/", "/csrf",
-            "/member-serivce/login",
-            "/shop-service/payments/**",
-            "/shop-service/api/v1/**",
-            "/shop-service/toss-payment.html",
-            "/user-service/login", "/?*-service/api/v1/messages/**", "/api/v1/messages/**",
+            "/member-service/api/v1/login", "/?*-service/api/v1/messages/**", "/api/v1/messages/**",
             "/?*-service/actuator/?*", "/actuator/?*",
+            "/actuator/gateway/**",
+            "/shop-service/payments/**",
+//            "/shop-service/api/v1/**",
+            "/shop-service/toss-payment.html",
             "/v3/api-docs/**", "/?*-service/v3/api-docs", "/swagger*/**", "/webjars/**"
     };
-    private final static String USER_JOIN_ANTPATTERNS = "/user-service/api/v1/users";
+
+    private final static String USER_JOIN_ANTPATTERNS = "/member-service/api/v1/members";
 
     /**
      * WebFlux 스프링 시큐리티 설정
@@ -57,10 +58,10 @@ public class WebFluxSecurityConfig {
         http
                 .csrf().disable()
                 .headers().frameOptions().disable()
-            .and()
+                .and()
                 .formLogin().disable()
                 .httpBasic().authenticationEntryPoint(new HttpStatusServerEntryPoint(HttpStatus.UNAUTHORIZED)) // login dialog disabled & 401 HttpStatus return
-            .and()
+                .and()
                 .authorizeExchange()
                 .pathMatchers(PERMITALL_ANTPATTERNS).permitAll()
                 .pathMatchers(HttpMethod.POST, USER_JOIN_ANTPATTERNS).permitAll()
